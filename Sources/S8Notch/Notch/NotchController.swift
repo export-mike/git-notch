@@ -198,9 +198,20 @@ final class NotchController: ObservableObject {
 
         // Size the popover to its content so it hugs the menu bar (no empty
         // voids): the "all clear" state is compact, a populated list fills to
-        // maxHeight and scrolls.
-        host.layoutSubtreeIfNeeded()
-        let height = min(maxHeight, max(160, host.fittingSize.height))
+        // maxHeight and scrolls. A SwiftUI List reports a near-zero fittingSize,
+        // so we can't measure a populated popover — key off whether any list
+        // (either side, either draft filter) has PRs and give it the full
+        // height; only fall back to measuring for the genuine all-clear state.
+        let hasContent = !state.reviewRequested.isEmpty
+            || !state.myAttention.isEmpty
+            || !state.myAttentionDrafts.isEmpty
+        let height: CGFloat
+        if hasContent {
+            height = maxHeight
+        } else {
+            host.layoutSubtreeIfNeeded()
+            height = min(maxHeight, max(160, host.fittingSize.height))
+        }
         let y = anchor.minY - height
 
         let panel = makePanel(frame: CGRect(x: x, y: y, width: width, height: height))
