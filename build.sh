@@ -14,6 +14,7 @@ rm -rf "${APP}"
 mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
 cp "${BIN}" "${APP}/Contents/MacOS/S8Notch"
 cp Info.plist "${APP}/Contents/Info.plist"
+cp Resources/*.mp3 "${APP}/Contents/Resources/" 2>/dev/null || true
 
 # Ad-hoc code signature so login-item registration works.
 codesign --force --sign - "${APP}" >/dev/null 2>&1 || true

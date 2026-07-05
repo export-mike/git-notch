@@ -51,14 +51,14 @@ struct NotchLayout {
                 clusterWidth: 46
             )
         } else {
-            // No notch: render a small floating pill centred at the top.
-            let barHeight = NSStatusBar.system.thickness > 0 ? NSStatusBar.system.thickness : 24
+            // No notch: render two self-contained rounded pills at the top centre.
+            // Tall enough to fit the 25px ring + badges; a small solid gap between.
             return NotchLayout(
                 screen: screen,
                 hasNotch: false,
-                barHeight: max(barHeight, 24),
-                notchWidth: 8,
-                clusterWidth: 46
+                barHeight: 32,
+                notchWidth: 10,
+                clusterWidth: 50
             )
         }
     }

@@ -12,11 +12,11 @@ struct DropdownView: View {
     private var items: [PullRequest] {
         switch side {
         case .left:  return state.reviewRequested
-        case .right: return draftFilter == .open ? state.myAttention : state.myAttentionDrafts
+        case .right: return draftFilter == .open ? state.openPRs : state.myAttentionDrafts
         }
     }
     private var title: String {
-        side == .left ? "Awaiting your review" : "Your PRs need attention"
+        side == .left ? "Awaiting your review" : "Your PRs"
     }
 
     var body: some View {
@@ -54,7 +54,7 @@ struct DropdownView: View {
 
     private var filterBar: some View {
         Picker("", selection: $draftFilter) {
-            Text("Open (\(state.myAttention.count))").tag(DraftFilter.open)
+            Text("Open (\(state.openPRs.count))").tag(DraftFilter.open)
             Text("Draft (\(state.myAttentionDrafts.count))").tag(DraftFilter.draft)
         }
         .pickerStyle(.segmented)
@@ -202,6 +202,7 @@ private struct PRRow: View {
         case .red: return .red
         case .orange: return .orange
         case .yellow: return .yellow
+        case .green: return .notchGreen
         case .neutral: return .blue
         }
     }

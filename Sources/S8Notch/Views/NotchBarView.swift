@@ -9,13 +9,18 @@ struct NotchBarView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            ClusterView(side: .left, count: state.reviewRequested.count)
+            ClusterView(side: .left, redCount: state.reviewRequested.count,
+                        urgent: state.hasUrgentReview, hasNotch: layout.hasNotch)
                 .frame(width: layout.clusterWidth)
-                .offset(x: 2)   // nudge inward toward the notch
-            Color.clear.frame(width: layout.notchWidth) // the notch itself
-            ClusterView(side: .right, count: state.myAttention.count)
+                .offset(x: layout.hasNotch ? 2 : 0)   // nudge inward toward the notch
+            Color.clear.frame(width: layout.notchWidth) // the notch (or a small gap)
+            ClusterView(side: .right, redCount: state.openAttentionCount,
+                        greenCount: state.openReadyCount, blueCount: state.openAwaitingCount,
+                        hasNotch: layout.hasNotch,
+                        browsable: !state.openPRs.isEmpty || !state.myAttentionDrafts.isEmpty,
+                        errored: state.lastError != nil)
                 .frame(width: layout.clusterWidth)
-                .offset(x: -2)  // nudge inward toward the notch
+                .offset(x: layout.hasNotch ? -2 : 0)  // nudge inward toward the notch
         }
         .frame(width: layout.windowWidth, height: layout.barHeight)
     }
@@ -23,19 +28,38 @@ struct NotchBarView: View {
 
 private struct ClusterView: View {
     let side: Side
-    let count: Int
+    let redCount: Int            // needs-attention / reviews-awaiting
+    var greenCount: Int = 0      // ready-to-merge (right side only)
+    var blueCount: Int = 0       // open awaiting review (right side only)
+    var urgent: Bool = false
+    var hasNotch: Bool = true    // false → free-standing rounded pill
+    var browsable: Bool = false  // right side: stay visible to browse PRs even with no red/green
+    var errored: Bool = false    // fetch failed → stay visible so the error is reachable
     @EnvironmentObject var controller: NotchController
 
-    /// hidden = nothing to show; active = red count; cleared = green tick (transient celebration).
+    /// hidden = nothing to show; active = counts showing; cleared = ✓ celebration.
     private enum Phase { case hidden, active, cleared }
     @State private var phase: Phase = .hidden
     @State private var pulseTrigger = 0
     @State private var retractWork: DispatchWorkItem?
 
-    private var isGreen: Bool { phase == .cleared }
-    private var accent: Color { isGreen ? .notchGreen : .notchRed }
+    private var total: Int { redCount + greenCount }
+    /// Visible with a count, PRs to browse, or an error to surface.
+    private var present: Bool { total > 0 || browsable || errored }
+    private var isViolent: Bool { urgent && phase == .active && redCount > 0 }
+    /// Error with nothing else to show → warn instead of hiding.
+    private var showError: Bool { errored && total == 0 && !browsable }
+    private var ringColor: Color {
+        if phase == .cleared { return .notchGreen }
+        if redCount > 0 { return .notchRed }
+        if greenCount > 0 { return .notchGreen }
+        if blueCount > 0 { return .notchBlue }   // open, awaiting review
+        if showError { return .orange }          // fetch failed, no data
+        return Color.white.opacity(0.55)         // drafts only — nothing else to show
+    }
     /// Inner edge (toward the notch) that content slides in from.
     private var innerEdge: Edge { side == .left ? .trailing : .leading }
+    private var outerX: CGFloat { side == .left ? -13 : 13 }
 
     var body: some View {
         ZStack {
@@ -49,57 +73,86 @@ private struct ClusterView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .onTapGesture { controller.toggleDropdown(side) }
-        .help(side == .left ? "PRs awaiting your review" : "Your PRs needing attention")
-        .onAppear { phase = count > 0 ? .active : .hidden }
-        .onChange(of: count) { old, new in react(old: old, new: new) }
+        .help(side == .left ? "PRs awaiting your review" : "Your PRs (needs attention / ready to merge)")
+        .onAppear { phase = present ? .active : .hidden }
+        .onChange(of: present) { _, now in setPresent(now) }
+        .onChange(of: total) { old, new in if new > old, phase == .active { pulseTrigger += 1 } }
     }
 
     private var content: some View {
         ZStack {
-            NotchTabShape(side: side, radius: 11)
+            NotchTabShape(side: side, radius: 11, standalone: !hasNotch)
                 .fill(Color.black)
-                // Extend the inner edge under the notch so the tab merges with
-                // it seamlessly (no seam, no gap).
-                .padding(Edge.Set(innerEdge), -6)
+                // With a real notch, extend the inner edge under it so the tab
+                // merges seamlessly. Free-standing pills need no tuck.
+                .padding(Edge.Set(innerEdge), hasNotch ? -6 : 0)
             ZStack {
-                PulseRing(color: accent, trigger: pulseTrigger)
-                Circle().strokeBorder(accent, lineWidth: 2).frame(width: 25, height: 25)
-                GitHubMark(color: .white)
+                if isViolent { RepeatingPulse(color: .notchRed) }   // urgent: relentless pulse
+                PulseRing(color: ringColor, trigger: pulseTrigger)
+                Circle().strokeBorder(ringColor, lineWidth: isViolent ? 2.5 : 2).frame(width: 25, height: 25)
+                GitHubMark(color: isViolent ? .notchRed : .white)   // urgent: the mark itself goes red
             }
-            badge.offset(x: side == .left ? -13 : 13, y: -8)
+            badges
         }
     }
 
-    @ViewBuilder private var badge: some View {
-        if isGreen {
-            Image(systemName: "checkmark")
-                .font(.system(size: 8, weight: .black))
-                .foregroundStyle(.white)
-                .frame(width: 16, height: 16)
-                .background(Circle().fill(Color.notchGreen)
-                    .overlay(Circle().strokeBorder(.black, lineWidth: 1.5)))
-                .transition(.scale.combined(with: .opacity))
+    @ViewBuilder private var badges: some View {
+        if phase == .cleared {
+            checkBadge.offset(x: outerX, y: -8)
         } else {
-            Text(count > 99 ? "99+" : "\(count)")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.white)
-                .contentTransition(.numericText())
-                .padding(.horizontal, 3)
-                .frame(minWidth: 14, minHeight: 14)
-                .background(Circle().fill(Color.notchRed)
-                    .overlay(Circle().strokeBorder(.black, lineWidth: 1.5)))
-                .transition(.scale.combined(with: .opacity))
+            // Red on top; green below it when both are present (green alone rides on top).
+            if redCount > 0 {
+                countBadge(redCount, color: .notchRed).offset(x: outerX, y: -8)
+            }
+            if greenCount > 0 {
+                countBadge(greenCount, color: .notchGreen)
+                    .offset(x: outerX, y: redCount > 0 ? 8 : -8)
+            }
+            // Nothing actionable: show the awaiting-review count in blue.
+            if redCount == 0 && greenCount == 0 && blueCount > 0 {
+                countBadge(blueCount, color: .notchBlue).offset(x: outerX, y: -8)
+            }
+            // Fetch failed with no data: warn so it's obvious something's wrong.
+            if showError {
+                Image(systemName: "exclamationmark")
+                    .font(.system(size: 9, weight: .black))
+                    .foregroundStyle(.white)
+                    .frame(width: 15, height: 15)
+                    .background(Circle().fill(Color.orange).overlay(Circle().strokeBorder(.black, lineWidth: 1.5)))
+                    .offset(x: outerX, y: -8)
+                    .transition(.scale.combined(with: .opacity))
+            }
         }
     }
 
-    /// State machine reacting to count changes.
-    private func react(old: Int, new: Int) {
+    private func countBadge(_ n: Int, color: Color) -> some View {
+        Text(n > 99 ? "99+" : "\(n)")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white)
+            .contentTransition(.numericText())
+            .padding(.horizontal, 3)
+            .frame(minWidth: 14, minHeight: 14)
+            .background(Circle().fill(color).overlay(Circle().strokeBorder(.black, lineWidth: 1.5)))
+            .transition(.scale.combined(with: .opacity))
+    }
+
+    private var checkBadge: some View {
+        Image(systemName: "checkmark")
+            .font(.system(size: 8, weight: .black))
+            .foregroundStyle(.white)
+            .frame(width: 16, height: 16)
+            .background(Circle().fill(Color.notchGreen).overlay(Circle().strokeBorder(.black, lineWidth: 1.5)))
+            .transition(.scale.combined(with: .opacity))
+    }
+
+    /// Show/hide the cluster as its presence toggles.
+    private func setPresent(_ now: Bool) {
         retractWork?.cancel(); retractWork = nil
-        if new > 0 {
+        if now {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) { phase = .active }
-            if new > old { pulseTrigger += 1 }              // new work landed → pulse
-        } else if old > 0 {
-            // Queue just hit zero: celebrate green, then retract to nothing.
+            pulseTrigger += 1
+        } else {
+            // Everything cleared: celebrate green, then retract to nothing.
             withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) { phase = .cleared }
             pulseTrigger += 1
             let work = DispatchWorkItem {
@@ -107,9 +160,25 @@ private struct ClusterView: View {
             }
             retractWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.6, execute: work)
-        } else {
-            phase = .hidden                                  // was already empty
         }
+    }
+}
+
+/// A ring that continuously expands and fades — used for urgent PRs, where the
+/// relentless motion is the point.
+private struct RepeatingPulse: View {
+    let color: Color
+    @State private var animate = false
+    var body: some View {
+        Circle().stroke(color, lineWidth: 2)
+            .frame(width: 26, height: 26)
+            .scaleEffect(animate ? 2.0 : 1.0)
+            .opacity(animate ? 0 : 0.8)
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.9).repeatForever(autoreverses: false)) {
+                    animate = true
+                }
+            }
     }
 }
 
@@ -138,23 +207,31 @@ private struct PulseRing: View {
 struct NotchTabShape: Shape {
     let side: Side
     var radius: CGFloat
+    /// Standalone (no real notch) → round BOTH bottom corners into a pill.
+    var standalone: Bool = false
+
     func path(in rect: CGRect) -> Path {
-        let r = min(radius, rect.height, rect.width)
+        let r = min(radius, rect.height, rect.width / 2)
+        // Which bottom corners to round: only the outer one next to a real notch,
+        // or both when free-standing.
+        let roundLeft = standalone || side == .left
+        let roundRight = standalone || side == .right
         var p = Path()
         p.move(to: CGPoint(x: rect.minX, y: rect.minY))      // top-left
         p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))   // top-right
-        if side == .right {
-            // Outer edge is the right → round bottom-right, square bottom-left.
+        if roundRight {
             p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
             p.addArc(center: CGPoint(x: rect.maxX - r, y: rect.maxY - r),
                      radius: r, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
-            p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
         } else {
-            // Outer edge is the left → round bottom-left, square bottom-right.
             p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        }
+        if roundLeft {
             p.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
             p.addArc(center: CGPoint(x: rect.minX + r, y: rect.maxY - r),
                      radius: r, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+        } else {
+            p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
         }
         p.closeSubpath()
         return p

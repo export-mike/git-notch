@@ -14,13 +14,30 @@ final class NotchController: ObservableObject {
 
     private var refreshTimer: Timer?
     private var outsideClickMonitor: Any?
+    private var napAssertion: NSObjectProtocol?
 
     // MARK: Lifecycle
 
     func start() {
+        // Accessory apps get App Nap'd when never frontmost, which throttles the
+        // refresh timer to minutes. This keeps our polling alive while still
+        // letting the Mac sleep normally when idle.
+        napAssertion = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep, .automaticTerminationDisabled],
+            reason: "Poll GitHub for PR updates")
+
         buildBarPanel()
         scheduleRefresh()
-        Task { await state.refresh() }
+
+        // Re-fetch immediately when the Mac wakes — the timer may have been
+        // suspended during sleep, so data could be stale.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshNow(reason: "wake-from-sleep") }
+        }
+
+        refreshNow(reason: "launch")
     }
 
     func relayout() {
@@ -34,14 +51,18 @@ final class NotchController: ObservableObject {
         let interval = max(20, state.settings.refreshInterval)
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             guard let self else { return }
-            Task { await self.state.refresh() }
+            Task { @MainActor in self.refreshNow(reason: "timer-\(Int(interval))s") }
         }
         timer.tolerance = 5
         RunLoop.main.add(timer, forMode: .common)
         refreshTimer = timer
+        NSLog("[s8notch] refresh timer scheduled every %.0fs", interval)
     }
 
-    func refreshNow() { Task { await state.refresh() } }
+    func refreshNow(reason: String = "manual") {
+        NSLog("[s8notch] heartbeat — refresh requested (%@)", reason)
+        Task { await state.refresh() }
+    }
 
     // MARK: Bar panel
 
@@ -83,6 +104,7 @@ final class NotchController: ObservableObject {
     private func openDropdown(_ side: Side) {
         closeDropdown()
         openSide = side
+        refreshNow(reason: "open-dropdown")   // always show fresh data when the user opens a list
 
         let width: CGFloat = 400
         let maxHeight: CGFloat = 460

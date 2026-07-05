@@ -11,6 +11,7 @@ struct PullRequest: Identifiable, Hashable {
     let author: String
     let updatedAt: Date
     let isDraft: Bool
+    let labels: [String]
 
     // Fields relevant when the PR is one of *mine*.
     let reviewDecision: String?     // APPROVED / CHANGES_REQUESTED / REVIEW_REQUIRED / nil
@@ -19,6 +20,15 @@ struct PullRequest: Identifiable, Hashable {
     let unresolvedCount: Int
     /// Distinct current approvals (latest review per author that is APPROVED).
     let approvalCount: Int
+    let mergeable: String?          // MERGEABLE / CONFLICTING / UNKNOWN
+
+    /// Approved, green CI, no conflicts, not a draft → good to merge.
+    var isReadyToMerge: Bool {
+        !isDraft
+            && reviewDecision == "APPROVED"
+            && (checkState == nil || checkState == "SUCCESS")
+            && mergeable != "CONFLICTING"
+    }
 
     /// Which attention signals this PR currently trips.
     var signals: Set<PRSignal> {
@@ -39,20 +49,23 @@ struct PullRequest: Identifiable, Hashable {
                 : "\(approvalCount) approval\(approvalCount == 1 ? "" : "s")"
             return "\(approvals) · \(relativeUpdated)"
         case .right:
+            if isReadyToMerge { return "Ready to merge · \(relativeUpdated)" }
             var parts: [String] = []
             if reviewDecision == "CHANGES_REQUESTED" { parts.append("Changes requested") }
             if let c = checkState, c == "FAILURE" || c == "ERROR" { parts.append("CI failing") }
             if unresolvedCount > 0 {
                 parts.append("\(unresolvedCount) unresolved comment\(unresolvedCount == 1 ? "" : "s")")
             }
-            if parts.isEmpty, reviewCount > 0 { parts.append("Review feedback") }
-            if parts.isEmpty { parts.append("Needs attention") }
+            if parts.isEmpty, reviewDecision == "APPROVED" { parts.append("Approved") }
+            if parts.isEmpty, reviewCount > 0 { parts.append("In review") }
+            if parts.isEmpty { parts.append("Awaiting review") }
             return parts.joined(separator: " · ") + " · \(relativeUpdated)"
         }
     }
 
     /// The dominant status colour for the row's leading dot.
     var accent: StatusAccent {
+        if isReadyToMerge { return .green }
         if let c = checkState, c == "FAILURE" || c == "ERROR" { return .red }
         if reviewDecision == "CHANGES_REQUESTED" { return .red }
         if unresolvedCount > 0 { return .orange }
@@ -61,9 +74,14 @@ struct PullRequest: Identifiable, Hashable {
     }
 
     var relativeUpdated: String { RelativeTime.string(from: updatedAt) }
+
+    /// True when the PR carries an `urgent` label (case-insensitive).
+    var isUrgent: Bool {
+        labels.contains { $0.caseInsensitiveCompare("urgent") == .orderedSame }
+    }
 }
 
-enum StatusAccent { case red, orange, yellow, neutral }
+enum StatusAccent { case red, orange, yellow, green, neutral }
 
 enum Side { case left, right }
 
