@@ -23,7 +23,7 @@ struct SettingsView: View {
                     set: { state.settings.org = $0 }
                 ))
                 .textFieldStyle(.roundedBorder)
-                Text("Limit all PRs to this org (e.g. spaceship-fspl). Leave blank for all.")
+                Text("Limit all PRs to this org (e.g. my-org). Leave blank for all.")
                     .font(.caption).foregroundStyle(.secondary)
 
                 TextField("Commenter (optional)", text: Binding(
