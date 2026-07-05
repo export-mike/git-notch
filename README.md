@@ -1,4 +1,4 @@
-# S8 Notch
+# Git Notch
 
 An elegant macOS agent app that lives around the MacBook notch and surfaces the
 GitHub pull requests that actually need you — nothing else. No dock icon, no
@@ -28,8 +28,8 @@ browser.
 ## Build & run
 
 ```sh
-./build.sh            # compiles release + assembles S8Notch.app
-open S8Notch.app      # launch (or run the binary directly to see logs)
+./build.sh            # compiles release + assembles GitNotch.app
+open GitNotch.app      # launch (or run the binary directly to see logs)
 ```
 
 Requires the Swift toolchain (Xcode CLT), macOS 14+, and `gh` installed &
@@ -45,7 +45,7 @@ launch-at-login.
 ## Layout
 
 ```
-Sources/S8Notch/
+Sources/GitNotch/
   main.swift              app entry (accessory / LSUIElement)
   AppDelegate.swift       boots the controller, watches screen changes
   AppState.swift          observable model: fetch + classify

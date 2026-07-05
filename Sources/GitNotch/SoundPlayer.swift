@@ -9,7 +9,7 @@ final class SoundPlayer {
 
     func play(resource name: String, ext: String) {
         guard let url = Bundle.main.url(forResource: name, withExtension: ext) else {
-            NSLog("[s8notch] sound resource missing: %@.%@", name, ext)
+            NSLog("[gitnotch] sound resource missing: %@.%@", name, ext)
             return
         }
         do {
@@ -18,7 +18,7 @@ final class SoundPlayer {
             p.play()
             player = p
         } catch {
-            NSLog("[s8notch] sound play error: %@", error.localizedDescription)
+            NSLog("[gitnotch] sound play error: %@", error.localizedDescription)
         }
     }
 }

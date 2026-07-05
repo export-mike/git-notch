@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>S8 Notch</string>
+    <string>Git Notch</string>
     <key>CFBundleDisplayName</key>
-    <string>S8 Notch</string>
+    <string>Git Notch</string>
     <key>CFBundleIdentifier</key>
-    <string>com.spaceship.s8notch</string>
+    <string>com.spaceship.gitnotch</string>
     <key>CFBundleExecutable</key>
-    <string>S8Notch</string>
+    <string>GitNotch</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

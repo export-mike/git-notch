@@ -9,8 +9,8 @@ cd "$(dirname "$0")"
 #   version  Optional. Defaults to CFBundleShortVersionString in Info.plist.
 #            When passed, Info.plist is updated to match before building.
 
-APP="S8Notch.app"
-VOL="S8 Notch"
+APP="GitNotch.app"
+VOL="Git Notch"
 
 # --- version ---------------------------------------------------------------
 plist_version() {
@@ -24,12 +24,12 @@ if [[ -n "${1:-}" ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" Info.plist
 fi
 TAG="v${VERSION}"
-DMG="S8Notch-${VERSION}.dmg"
+DMG="GitNotch-${VERSION}.dmg"
 
 # --- auth / repo -----------------------------------------------------------
 # Prefer an explicit env token, else the project token file (see repo memory).
-if [[ -z "${GH_TOKEN:-}" && -f "${HOME}/.config/s8-notch/token" ]]; then
-  GH_TOKEN="$(cat "${HOME}/.config/s8-notch/token")"
+if [[ -z "${GH_TOKEN:-}" && -f "${HOME}/.config/git-notch/token" ]]; then
+  GH_TOKEN="$(cat "${HOME}/.config/git-notch/token")"
   export GH_TOKEN
 fi
 REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
@@ -60,7 +60,7 @@ echo "   ${DMG}  sha256=${SHA}"
 
 # --- tag -------------------------------------------------------------------
 if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
-  git tag -a "${TAG}" -m "S8 Notch ${VERSION}"
+  git tag -a "${TAG}" -m "Git Notch ${VERSION}"
   git push origin "${TAG}"
 else
   echo ">> Tag ${TAG} already exists — reusing"
@@ -68,9 +68,9 @@ fi
 
 # --- publish ---------------------------------------------------------------
 NOTES="$(cat <<EOF
-S8 Notch ${VERSION}
+Git Notch ${VERSION}
 
-**Install:** open the DMG and drag **S8 Notch** onto the **Applications** folder.
+**Install:** open the DMG and drag **Git Notch** onto the **Applications** folder.
 
 On first launch, macOS may warn the app is from an unidentified developer
 (it is ad-hoc signed). Right-click the app → **Open**, then confirm.
@@ -87,7 +87,7 @@ if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
 else
   gh release create "${TAG}" "${DMG}" \
     --repo "${REPO}" \
-    --title "S8 Notch ${VERSION}" \
+    --title "Git Notch ${VERSION}" \
     --notes "${NOTES}"
 fi
 
