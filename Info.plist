@@ -6,6 +6,8 @@
 	<string>Git Notch</string>
 	<key>CFBundleExecutable</key>
 	<string>GitNotch</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.spaceship.gitnotch</string>
 	<key>CFBundleName</key>

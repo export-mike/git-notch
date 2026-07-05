@@ -4,6 +4,10 @@
 <dict>
 	<key>files</key>
 	<dict>
+		<key>Resources/AppIcon.icns</key>
+		<data>
+		BWK2SYA6XLdP1ZSy+qQjYUrYidg=
+		</data>
 		<key>Resources/Task_Resolved.mp3</key>
 		<data>
 		cOpOLI8jyTh1c5dCNPLm7S5xqLM=
@@ -11,6 +15,13 @@
 	</dict>
 	<key>files2</key>
 	<dict>
+		<key>Resources/AppIcon.icns</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			VuaqTYIoM3pw6zYiKeuzu9B9tPwyqAZZzBor+qMNZrY=
+			</data>
+		</dict>
 		<key>Resources/Task_Resolved.mp3</key>
 		<dict>
 			<key>hash2</key>
