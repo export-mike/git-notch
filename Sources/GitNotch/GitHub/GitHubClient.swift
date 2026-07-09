@@ -36,13 +36,13 @@ enum GitHubClient {
 
     /// Token source, in priority order:
     ///  1. `GIT_NOTCH_GH_TOKEN` env var (great for terminal/launchd launches).
-    ///  2. A token file — `GIT_NOTCH_GH_TOKEN_FILE` or `~/.config/s8-notch/token`
+    ///  2. A token file — `GIT_NOTCH_GH_TOKEN_FILE` or `~/.config/git-notch/token`
     ///     (survives Finder/login-item launches, which don't inherit shell env).
     ///  3. The already-authenticated `gh` CLI (`gh auth token`).
     static func token() async throws -> String {
         if let override = ProcessInfo.processInfo.environment["GIT_NOTCH_GH_TOKEN"]?
             .trimmingCharacters(in: .whitespacesAndNewlines), !override.isEmpty {
-            NSLog("[s8notch] using token from GIT_NOTCH_GH_TOKEN")
+            NSLog("[gitnotch] using token from GIT_NOTCH_GH_TOKEN")
             return override
         }
         if let fileToken = tokenFromFile() {
@@ -56,7 +56,7 @@ enum GitHubClient {
         }
     }
 
-    /// Reads a token from `GIT_NOTCH_GH_TOKEN_FILE` or `~/.config/s8-notch/token`.
+    /// Reads a token from `GIT_NOTCH_GH_TOKEN_FILE` or `~/.config/git-notch/token`.
     private static func tokenFromFile() -> String? {
         let env = ProcessInfo.processInfo.environment
         let path: String
@@ -65,12 +65,12 @@ enum GitHubClient {
             path = (custom as NSString).expandingTildeInPath
         } else {
             path = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".config/s8-notch/token").path
+                .appendingPathComponent(".config/git-notch/token").path
         }
         guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
         let token = contents.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else { return nil }
-        NSLog("[s8notch] using token from file %@", path)
+        NSLog("[gitnotch] using token from file %@", path)
         return token
     }
 
@@ -131,7 +131,7 @@ enum GitHubClient {
         req.httpMethod = "POST"
         req.setValue("bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("s8-notch", forHTTPHeaderField: "User-Agent")
+        req.setValue("git-notch", forHTTPHeaderField: "User-Agent")
         req.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
         let (data, response) = try await URLSession.shared.data(for: req)

@@ -90,11 +90,11 @@ final class NotchController: ObservableObject {
         timer.tolerance = 5
         RunLoop.main.add(timer, forMode: .common)
         refreshTimer = timer
-        NSLog("[s8notch] refresh timer scheduled every %.0fs", interval)
+        NSLog("[gitnotch] refresh timer scheduled every %.0fs", interval)
     }
 
     func refreshNow(reason: String = "manual") {
-        NSLog("[s8notch] heartbeat — refresh requested (%@)", reason)
+        NSLog("[gitnotch] heartbeat — refresh requested (%@)", reason)
         Task { await state.refresh() }
     }
 
@@ -132,7 +132,7 @@ final class NotchController: ObservableObject {
 
     private func buildStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.autosaveName = "com.spaceship.s8notch.status"  // persists position, enables ⌘-drag
+        item.autosaveName = "com.spaceship.gitnotch.status"  // persists position, enables ⌘-drag
         if let button = item.button {
             let host = NSHostingView(rootView: StatusButtonView(state: state))
             button.addSubview(host)
@@ -286,7 +286,7 @@ final class NotchController: ObservableObject {
             styleMask: [.titled, .closable],
             backing: .buffered, defer: false
         )
-        panel.title = "S8 Notch — Settings"
+        panel.title = "Git Notch — Settings"
         panel.level = .floating
         panel.isReleasedWhenClosed = false
         panel.contentView = NSHostingView(

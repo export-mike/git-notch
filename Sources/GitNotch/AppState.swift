@@ -57,7 +57,7 @@ final class AppState: ObservableObject {
         // wait for the hourly window to reset. Prevents fully exhausting the limit.
         if rateRemaining < Self.rateFloor, let reset = rateResetAt, reset > Date() {
             let secs = Int(reset.timeIntervalSinceNow)
-            NSLog("[s8notch] skipping refresh — GraphQL budget low (%d left, resets in %ds)", rateRemaining, secs)
+            NSLog("[gitnotch] skipping refresh — GraphQL budget low (%d left, resets in %ds)", rateRemaining, secs)
             return
         }
 
@@ -75,12 +75,12 @@ final class AppState: ObservableObject {
             reclassify()
             lastError = nil
             lastUpdated = Date()
-            NSLog("[s8notch] refresh ok: %@ — review=%d open=%d (red=%d green=%d) drafts=%d | cost=%d remaining=%d/hr",
+            NSLog("[gitnotch] refresh ok: %@ — review=%d open=%d (red=%d green=%d) drafts=%d | cost=%d remaining=%d/hr",
                   viewerLogin, reviewRequested.count, openPRs.count, openAttentionCount, openReadyCount,
                   myAttentionDrafts.count, result.rateCost, result.rateRemaining)
         } catch {
             lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            NSLog("[s8notch] refresh failed: %@", lastError ?? "unknown")
+            NSLog("[gitnotch] refresh failed: %@", lastError ?? "unknown")
         }
     }
 
@@ -112,7 +112,7 @@ final class AppState: ObservableObject {
         let fresh = current.subtracting(alertedUrgentIDs)
         if !fresh.isEmpty {
             sound.play(resource: "Task_Resolved", ext: "mp3")
-            NSLog("[s8notch] urgent PR(s) — playing alert: %@", fresh.joined(separator: ", "))
+            NSLog("[gitnotch] urgent PR(s) — playing alert: %@", fresh.joined(separator: ", "))
         }
         alertedUrgentIDs = current   // forget ones no longer urgent so they can re-alert later
     }
