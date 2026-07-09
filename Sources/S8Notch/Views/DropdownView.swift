@@ -3,11 +3,20 @@ import SwiftUI
 enum DraftFilter: String, CaseIterable { case open = "Open", draft = "Draft" }
 
 struct DropdownView: View {
-    let side: Side
+    /// When `showsSideSwitcher` is true this becomes user-switchable (tray mode);
+    /// otherwise it's fixed to the value passed in (notch clusters).
+    @State private var side: Side
+    let showsSideSwitcher: Bool
     let maxHeight: CGFloat
     @EnvironmentObject var state: AppState
     @EnvironmentObject var controller: NotchController
     @State private var draftFilter: DraftFilter = .open
+
+    init(side: Side, maxHeight: CGFloat, showsSideSwitcher: Bool = false) {
+        _side = State(initialValue: side)
+        self.maxHeight = maxHeight
+        self.showsSideSwitcher = showsSideSwitcher
+    }
 
     private var items: [PullRequest] {
         switch side {
@@ -21,6 +30,9 @@ struct DropdownView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if showsSideSwitcher {
+                sideSwitcher
+            }
             header
             if side == .right {
                 filterBar
@@ -36,6 +48,22 @@ struct DropdownView: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1)))
+        // The popover is dark-styled by hand; force the dark appearance so
+        // system controls (segmented pickers) draw their labels light-on-dark
+        // instead of near-black-on-dark (invisible).
+        .environment(\.colorScheme, .dark)
+    }
+
+    private var sideSwitcher: some View {
+        Picker("", selection: $side) {
+            Text("Review (\(state.reviewRequested.count))").tag(Side.left)
+            Text("Yours (\(state.openPRs.count))").tag(Side.right)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .padding(.horizontal, 14)
+        .padding(.top, 11)
+        .padding(.bottom, 4)
     }
 
     private var header: some View {
@@ -99,7 +127,11 @@ struct DropdownView: View {
             Text(text).font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 34).padding(.horizontal, 20)
+        // Fill the content region and centre, so the footer stays pinned to the
+        // bottom instead of leaving a void when the popover is taller than the
+        // message (e.g. the all-clear side of a populated tray popover).
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.vertical, 34).padding(.horizontal, 20)
     }
 
     private var footer: some View {
