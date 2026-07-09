@@ -27,18 +27,51 @@ enum GitHubClient {
         let viewerLogin: String
         let reviewRequested: [PullRequest]   // PRs awaiting *my* review
         let mine: [PullRequest]              // *my* open PRs (unfiltered)
+        let rateCost: Int                    // points this query cost
+        let rateRemaining: Int               // points left this hour
+        let rateResetAt: Date?               // when the hourly window resets
     }
 
     // MARK: - Token
 
-    /// Reads the OAuth token from `gh auth token` on a background thread.
+    /// Token source, in priority order:
+    ///  1. `GIT_NOTCH_GH_TOKEN` env var (great for terminal/launchd launches).
+    ///  2. A token file — `GIT_NOTCH_GH_TOKEN_FILE` or `~/.config/s8-notch/token`
+    ///     (survives Finder/login-item launches, which don't inherit shell env).
+    ///  3. The already-authenticated `gh` CLI (`gh auth token`).
     static func token() async throws -> String {
-        try await withCheckedThrowingContinuation { cont in
+        if let override = ProcessInfo.processInfo.environment["GIT_NOTCH_GH_TOKEN"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !override.isEmpty {
+            NSLog("[s8notch] using token from GIT_NOTCH_GH_TOKEN")
+            return override
+        }
+        if let fileToken = tokenFromFile() {
+            return fileToken
+        }
+        return try await withCheckedThrowingContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
                 do { cont.resume(returning: try readTokenSync()) }
                 catch { cont.resume(throwing: error) }
             }
         }
+    }
+
+    /// Reads a token from `GIT_NOTCH_GH_TOKEN_FILE` or `~/.config/s8-notch/token`.
+    private static func tokenFromFile() -> String? {
+        let env = ProcessInfo.processInfo.environment
+        let path: String
+        if let custom = env["GIT_NOTCH_GH_TOKEN_FILE"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !custom.isEmpty {
+            path = (custom as NSString).expandingTildeInPath
+        } else {
+            path = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".config/s8-notch/token").path
+        }
+        guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        let token = contents.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return nil }
+        NSLog("[s8notch] using token from file %@", path)
+        return token
     }
 
     private static func readTokenSync() throws -> String {
@@ -115,35 +148,56 @@ enum GitHubClient {
         return FetchResult(
             viewerLogin: d.viewer.login,
             reviewRequested: d.reviewRequested.nodes.compactMap { $0.toPullRequest() },
-            mine: d.myPRs.nodes.compactMap { $0.toPullRequest() }
+            mine: d.myPRs.nodes.compactMap { $0.toPullRequest() },
+            rateCost: d.rateLimit?.cost ?? 0,
+            rateRemaining: d.rateLimit?.remaining ?? 0,
+            rateResetAt: (d.rateLimit?.resetAt).flatMap { ISO8601DateFormatter().date(from: $0) }
         )
     }
 
+    // RATE-LIMIT RULE: GitHub GraphQL allows 5,000 points/hour. Query cost ≈ the
+    // total nodes that *could* be returned (roughly sum of nested first:/last:
+    // products ÷ 100). Keep every `first:` as small as realistically needed and
+    // only request fields a side actually uses, so a full hour of polling stays
+    // well under budget. Two lean fragments below: the left (review) list only
+    // needs labels + approvals; the right (mine) list needs review/CI/merge state.
+    // See also: the `rateLimit` block, which the app logs and backs off on.
     private static let query = """
     query($rr: String!, $mine: String!) {
+      rateLimit { cost remaining limit resetAt }
       viewer { login }
-      reviewRequested: search(query: $rr, type: ISSUE, first: 50) {
+      reviewRequested: search(query: $rr, type: ISSUE, first: 40) {
         issueCount
-        nodes { ...prFields }
+        nodes { ...reviewFields }
       }
-      myPRs: search(query: $mine, type: ISSUE, first: 50) {
+      myPRs: search(query: $mine, type: ISSUE, first: 40) {
         issueCount
-        nodes { ...prFields }
+        nodes { ...mineFields }
       }
     }
-    fragment prFields on PullRequest {
+    fragment reviewFields on PullRequest {
+      title
+      url
+      number
+      updatedAt
+      repository { nameWithOwner }
+      author { login }
+      labels(first: 10) { nodes { name } }
+      latestReviews(first: 10) { nodes { state } }
+    }
+    fragment mineFields on PullRequest {
       title
       url
       number
       updatedAt
       isDraft
       reviewDecision
+      mergeable
       repository { nameWithOwner }
       author { login }
       reviews { totalCount }
-      latestReviews(first: 30) { nodes { state } }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-      reviewThreads(first: 100) { nodes { isResolved isOutdated } }
+      reviewThreads(first: 20) { nodes { isResolved isOutdated } }
     }
     """
 }
@@ -160,6 +214,13 @@ private struct GQLData: Decodable {
     let viewer: Viewer
     let reviewRequested: SearchResult
     let myPRs: SearchResult
+    let rateLimit: RateLimit?
+}
+private struct RateLimit: Decodable {
+    let cost: Int
+    let remaining: Int
+    let limit: Int
+    let resetAt: String
 }
 private struct Viewer: Decodable { let login: String }
 private struct SearchResult: Decodable { let issueCount: Int; let nodes: [PRNode] }
@@ -171,9 +232,16 @@ private struct PRNode: Decodable {
     let updatedAt: String?
     let isDraft: Bool?
     let reviewDecision: String?
+    let mergeable: String?
     let repository: Repo?
     let author: Author?
+    let labels: Labels?
     let reviews: Count?
+
+    struct Labels: Decodable {
+        let nodes: [Label]
+        struct Label: Decodable { let name: String }
+    }
     let latestReviews: Reviews?
     let commits: Commits?
     let reviewThreads: Threads?
@@ -214,11 +282,13 @@ private struct PRNode: Decodable {
             author: author?.login ?? "",
             updatedAt: iso,
             isDraft: isDraft ?? false,
+            labels: labels?.nodes.map(\.name) ?? [],
             reviewDecision: reviewDecision,
             reviewCount: reviews?.totalCount ?? 0,
             checkState: checkState,
             unresolvedCount: unresolved,
-            approvalCount: approvals
+            approvalCount: approvals,
+            mergeable: mergeable
         )
     }
 

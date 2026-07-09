@@ -3,9 +3,22 @@
 <plist version="1.0">
 <dict>
 	<key>files</key>
-	<dict/>
+	<dict>
+		<key>Resources/Task_Resolved.mp3</key>
+		<data>
+		cOpOLI8jyTh1c5dCNPLm7S5xqLM=
+		</data>
+	</dict>
 	<key>files2</key>
-	<dict/>
+	<dict>
+		<key>Resources/Task_Resolved.mp3</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			duI1CrcxRO76wyVBzpXd2ey5eVB1sA5GGxLrUy9Vda8=
+			</data>
+		</dict>
+	</dict>
 	<key>rules</key>
 	<dict>
 		<key>^Resources/</key>

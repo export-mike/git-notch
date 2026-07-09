@@ -24,6 +24,7 @@ extension Color {
     /// Accent palette from the notch animation design spec.
     static let notchRed = Color(red: 1.0, green: 0.271, blue: 0.227)    // #FF453A
     static let notchGreen = Color(red: 0.188, green: 0.820, blue: 0.345) // #30D158
+    static let notchBlue = Color(red: 0.039, green: 0.518, blue: 1.0)   // #0A84FF
 }
 
 /// SwiftUI wrapper that renders the mark tinted to `color`.

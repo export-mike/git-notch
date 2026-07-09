@@ -9,13 +9,28 @@ final class AppState: ObservableObject {
 
     let settings = Settings()
     let snoozes = SnoozeStore()
+    private let sound = SoundPlayer()
+
+    /// True when any review awaiting you carries an `urgent` label.
+    var hasUrgentReview: Bool { reviewRequested.contains(where: \.isUrgent) }
+    /// Urgent PR ids we've already sounded the alarm for, to avoid replaying.
+    private var alertedUrgentIDs: Set<String> = []
 
     /// PRs awaiting my review with fewer than `approvalThreshold` approvals (left badge).
     @Published private(set) var reviewRequested: [PullRequest] = []
-    /// My open (non-draft) PRs that trip an enabled attention signal (right badge + default view).
-    @Published private(set) var myAttention: [PullRequest] = []
-    /// My *draft* PRs that trip an enabled attention signal (Draft tab).
+    /// ALL my open (non-draft) PRs — the Open tab list.
+    @Published private(set) var openPRs: [PullRequest] = []
+    /// ALL my open drafts — the Draft tab list.
     @Published private(set) var myAttentionDrafts: [PullRequest] = []
+
+    /// Red badge: open PRs needing attention (excluding ones ready to merge).
+    var openAttentionCount: Int {
+        openPRs.filter { !$0.isReadyToMerge && !$0.signals.isDisjoint(with: settings.enabledSignals) }.count
+    }
+    /// Green badge: open PRs ready to merge.
+    var openReadyCount: Int { openPRs.filter(\.isReadyToMerge).count }
+    /// Blue badge: open PRs just awaiting review — not ready, nothing needs attention.
+    var openAwaitingCount: Int { max(0, openPRs.count - openAttentionCount - openReadyCount) }
 
     @Published private(set) var viewerLogin: String = ""
     @Published private(set) var isLoading = false
@@ -27,11 +42,25 @@ final class AppState: ObservableObject {
     private var rawReviewRequested: [PullRequest] = []
     private var rawMine: [PullRequest] = []
 
+    // GraphQL budget tracking (5,000 points/hour). We stop polling when the
+    // remaining budget dips below this floor and resume after the window resets.
+    private static let rateFloor = 150
+    private var rateRemaining = 5000
+    private var rateResetAt: Date?
+
     init() {
         settings.onChange = { [weak self] in self?.reclassify() }
     }
 
     func refresh() async {
+        // Budget guard: don't poll when the GraphQL point budget is nearly spent;
+        // wait for the hourly window to reset. Prevents fully exhausting the limit.
+        if rateRemaining < Self.rateFloor, let reset = rateResetAt, reset > Date() {
+            let secs = Int(reset.timeIntervalSinceNow)
+            NSLog("[s8notch] skipping refresh — GraphQL budget low (%d left, resets in %ds)", rateRemaining, secs)
+            return
+        }
+
         isLoading = true
         defer { isLoading = false }
         do {
@@ -41,11 +70,14 @@ final class AppState: ObservableObject {
             viewerLogin = result.viewerLogin
             rawReviewRequested = result.reviewRequested
             rawMine = result.mine
+            rateRemaining = result.rateRemaining
+            rateResetAt = result.rateResetAt
             reclassify()
             lastError = nil
             lastUpdated = Date()
-            NSLog("[s8notch] refresh ok: %@ — review-requested=%d, my-attention=%d (+%d draft) of %d mine",
-                  viewerLogin, reviewRequested.count, myAttention.count, myAttentionDrafts.count, rawMine.count)
+            NSLog("[s8notch] refresh ok: %@ — review=%d open=%d (red=%d green=%d) drafts=%d | cost=%d remaining=%d/hr",
+                  viewerLogin, reviewRequested.count, openPRs.count, openAttentionCount, openReadyCount,
+                  myAttentionDrafts.count, result.rateCost, result.rateRemaining)
         } catch {
             lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             NSLog("[s8notch] refresh failed: %@", lastError ?? "unknown")
@@ -61,16 +93,28 @@ final class AppState: ObservableObject {
             .filter { !snoozes.isSnoozed($0.id) }
             .sorted { $0.updatedAt > $1.updatedAt }
 
-        let enabled = settings.enabledSignals
         let live = rawMine.filter { !snoozes.isSnoozed($0.id) }
-        // Open (non-draft) PRs must trip an enabled attention signal.
-        myAttention = live
-            .filter { !$0.isDraft && !$0.signals.isDisjoint(with: enabled) }
+        // Open tab lists ALL open non-draft PRs; badges (red/green) are derived counts.
+        openPRs = live
+            .filter { !$0.isDraft }
             .sorted { $0.updatedAt > $1.updatedAt }
         // The Draft tab lists ALL your open drafts, regardless of signals.
         myAttentionDrafts = live
             .filter { $0.isDraft }
             .sorted { $0.updatedAt > $1.updatedAt }
+
+        alertOnNewUrgent()
+    }
+
+    /// Sound the alarm the first time each urgent review shows up.
+    private func alertOnNewUrgent() {
+        let current = Set(reviewRequested.filter(\.isUrgent).map(\.id))
+        let fresh = current.subtracting(alertedUrgentIDs)
+        if !fresh.isEmpty {
+            sound.play(resource: "Task_Resolved", ext: "mp3")
+            NSLog("[s8notch] urgent PR(s) — playing alert: %@", fresh.joined(separator: ", "))
+        }
+        alertedUrgentIDs = current   // forget ones no longer urgent so they can re-alert later
     }
 
     /// Snooze a PR for the configured duration, then refresh the visible lists.
