@@ -11,6 +11,7 @@ final class NotchController: ObservableObject {
     private var statusItem: NSStatusItem?
     private var dropdown: NSPanel?
     private var settingsPanel: NSPanel?
+    private var onboardingPanel: NSPanel?
     private var openSide: Side?
     private var layout = NotchLayout.current()
 
@@ -40,7 +41,43 @@ final class NotchController: ObservableObject {
             Task { @MainActor in self?.refreshNow(reason: "wake-from-sleep") }
         }
 
+        // First launch: ask which org to watch before we start surfacing PRs.
+        if !state.settings.hasCompletedOnboarding {
+            presentOnboarding()
+        }
+
         refreshNow(reason: "launch")
+    }
+
+    // MARK: Onboarding
+
+    private func presentOnboarding() {
+        let width: CGFloat = 380, height: CGFloat = 250
+        let f = layout.screen.frame
+        let frame = CGRect(x: f.midX - width / 2, y: f.midY - height / 2, width: width, height: height)
+        let panel = NSPanel(
+            contentRect: frame,
+            styleMask: [.titled],   // no close button — finish via Continue
+            backing: .buffered, defer: false
+        )
+        panel.title = "Git Notch Setup"
+        panel.level = .floating
+        panel.isReleasedWhenClosed = false
+        panel.contentView = NSHostingView(
+            rootView: OnboardingView(onDone: { [weak self] in self?.finishOnboarding() })
+                .environmentObject(state)
+        )
+        onboardingPanel = panel
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func finishOnboarding() {
+        state.settings.hasCompletedOnboarding = true
+        onboardingPanel?.orderOut(nil)
+        onboardingPanel = nil
+        refreshNow(reason: "onboarding-complete")   // re-fetch with the chosen org
     }
 
     /// Build whichever presentation suits the current display: the notch bar on

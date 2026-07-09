@@ -41,14 +41,23 @@ final class Settings: ObservableObject {
         didSet { defaults.set(snoozeDuration, forKey: "snoozeDuration") }
     }
 
+    /// Whether the first-run setup prompt has been shown. Nothing about the org
+    /// is baked in — a fresh install asks for it on first launch.
+    var hasCompletedOnboarding: Bool {
+        didSet { defaults.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding") }
+    }
+
     init() {
         if let raw = defaults.array(forKey: "enabledSignals") as? [String] {
             enabledSignals = Set(raw.compactMap(PRSignal.init(rawValue:)))
         } else {
             enabledSignals = Set(PRSignal.allCases) // default: all four on
         }
-        org = defaults.object(forKey: "org") as? String ?? "spaceship-fspl"
+        org = defaults.object(forKey: "org") as? String ?? ""
         commenter = defaults.string(forKey: "commenter") ?? ""
+        // Existing installs that already have an org configured skip the prompt.
+        hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
+            || defaults.object(forKey: "org") != nil
         let stored = defaults.double(forKey: "refreshInterval")
         refreshInterval = stored > 0 ? stored : 90
         let snooze = defaults.double(forKey: "snoozeDuration")
