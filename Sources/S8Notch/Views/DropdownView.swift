@@ -127,7 +127,11 @@ struct DropdownView: View {
             Text(text).font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 34).padding(.horizontal, 20)
+        // Fill the content region and centre, so the footer stays pinned to the
+        // bottom instead of leaving a void when the popover is taller than the
+        // message (e.g. the all-clear side of a populated tray popover).
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.vertical, 34).padding(.horizontal, 20)
     }
 
     private var footer: some View {
