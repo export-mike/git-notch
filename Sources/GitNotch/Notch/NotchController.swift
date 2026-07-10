@@ -207,6 +207,21 @@ final class NotchController: ObservableObject {
         openTrayDropdown(anchor: anchor)
     }
 
+    /// The frame of the screen whose menu bar the anchor sits under. Prefers the
+    /// screen containing the anchor's midpoint; falls back to the one with the
+    /// most overlap so a partially off-screen anchor still lands correctly.
+    private func screenContaining(_ anchor: CGRect) -> CGRect? {
+        let point = CGPoint(x: anchor.midX, y: anchor.midY)
+        if let hit = NSScreen.screens.first(where: { $0.frame.contains(point) }) {
+            return hit.frame
+        }
+        func overlap(_ s: NSScreen) -> CGFloat {
+            let r = s.frame.intersection(anchor)
+            return r.isNull ? 0 : r.width * r.height
+        }
+        return NSScreen.screens.max { overlap($0) < overlap($1) }?.frame
+    }
+
     // MARK: Dropdown
 
     func toggleDropdown(_ side: Side) {
@@ -246,7 +261,10 @@ final class NotchController: ObservableObject {
 
         let width: CGFloat = 400
         let maxHeight: CGFloat = 460
-        let f = layout.screen.frame
+        // Clamp to the screen the icon was actually clicked on, not layout.screen
+        // (that's NSScreen.main — the focused-window display, which may differ
+        // when multiple/mirrored monitors are attached).
+        let f = screenContaining(anchor) ?? layout.screen.frame
         var x = anchor.midX - width / 2
         x = min(max(x, f.minX + 8), f.maxX - width - 8)
 
