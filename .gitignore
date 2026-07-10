@@ -89,3 +89,4 @@ iOSInjectionProject/
 
 # Release artifacts
 *.dmg
+tools/*.sh
