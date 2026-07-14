@@ -34,6 +34,9 @@ struct DropdownView: View {
                 sideSwitcher
             }
             header
+            if side == .left && state.isUrgentSoundPlaying {
+                silenceBanner
+            }
             if side == .right {
                 filterBar
             }
@@ -78,6 +81,24 @@ struct DropdownView: View {
                 .background(Capsule().fill(items.isEmpty ? Color.white.opacity(0.15) : Color.red))
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+    }
+
+    /// One-tap silence for the urgent alarm — shown on the incoming side only
+    /// while the sound is actually playing.
+    private var silenceBanner: some View {
+        Button { state.silenceUrgentAlarm() } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "speaker.slash.fill")
+                Text("Silence urgent alert").font(.system(size: 12, weight: .semibold))
+                Spacer()
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.notchRed.opacity(0.9)))
+        }
+        .buttonStyle(.plain)
+        .help("Stop the urgent alert sound")
+        .padding(.horizontal, 14).padding(.bottom, 9)
     }
 
     private var filterBar: some View {

@@ -15,6 +15,9 @@ final class AppState: ObservableObject {
     var hasUrgentReview: Bool { reviewRequested.contains(where: \.isUrgent) }
     /// Urgent PR ids we've already sounded the alarm for, to avoid replaying.
     private var alertedUrgentIDs: Set<String> = []
+    /// True while the urgent-alert sound is actively playing, so the UI can
+    /// surface a one-tap silence control.
+    @Published private(set) var isUrgentSoundPlaying = false
 
     /// PRs awaiting my review with fewer than `approvalThreshold` approvals (left badge).
     @Published private(set) var reviewRequested: [PullRequest] = []
@@ -53,6 +56,7 @@ final class AppState: ObservableObject {
 
     init() {
         settings.onChange = { [weak self] in self?.reclassify() }
+        sound.onPlayingChange = { [weak self] playing in self?.isUrgentSoundPlaying = playing }
     }
 
     func refresh() async {
@@ -120,6 +124,10 @@ final class AppState: ObservableObject {
         }
         alertedUrgentIDs = current   // forget ones no longer urgent so they can re-alert later
     }
+
+    /// Silence the urgent alert immediately. It's loud, so opening the dropdown
+    /// and hitting this means the user is already acting on the PR.
+    func silenceUrgentAlarm() { sound.stop() }
 
     /// Snooze a PR for the configured duration, then refresh the visible lists.
     func snooze(_ pr: PullRequest) {
