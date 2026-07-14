@@ -66,7 +66,8 @@ final class AppState: ObservableObject {
         do {
             let token = try await GitHubClient.token()
             let result = try await GitHubClient.fetch(
-                token: token, org: settings.org, commenter: settings.commenter)
+                token: token, org: settings.org, commenter: settings.commenter,
+                directReviewRequestsOnly: settings.directReviewRequestsOnly)
             viewerLogin = result.viewerLogin
             rawReviewRequested = result.reviewRequested
             rawMine = result.mine

@@ -18,6 +18,14 @@ struct SettingsView: View {
             }
 
             Section("Filters") {
+                Toggle("Only direct review requests", isOn: Binding(
+                    get: { state.settings.directReviewRequestsOnly },
+                    set: { state.settings.directReviewRequestsOnly = $0
+                           controller.refreshNow(reason: "review-filter-changed") }
+                ))
+                Text("Hide PRs requested via a team you're on — show only when you're added individually.")
+                    .font(.caption).foregroundStyle(.secondary)
+
                 TextField("Organization", text: Binding(
                     get: { state.settings.org },
                     set: { state.settings.org = $0 }
