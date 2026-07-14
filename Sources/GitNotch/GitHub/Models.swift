@@ -1,5 +1,11 @@
 import Foundation
 
+/// A label as GitHub reports it. `color` is a 6-char hex string (no '#').
+struct PRLabel: Hashable {
+    let name: String
+    let color: String
+}
+
 /// A pull request, cleaned up from the GraphQL response into something the UI
 /// can render directly.
 struct PullRequest: Identifiable, Hashable {
@@ -11,7 +17,7 @@ struct PullRequest: Identifiable, Hashable {
     let author: String
     let updatedAt: Date
     let isDraft: Bool
-    let labels: [String]
+    var labels: [PRLabel]
 
     // Fields relevant when the PR is one of *mine*.
     let reviewDecision: String?     // APPROVED / CHANGES_REQUESTED / REVIEW_REQUIRED / nil
@@ -77,7 +83,7 @@ struct PullRequest: Identifiable, Hashable {
 
     /// True when the PR carries an `urgent` label (case-insensitive).
     var isUrgent: Bool {
-        labels.contains { $0.caseInsensitiveCompare("urgent") == .orderedSame }
+        labels.contains { $0.name.caseInsensitiveCompare("urgent") == .orderedSame }
     }
 }
 

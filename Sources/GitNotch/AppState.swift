@@ -42,6 +42,9 @@ final class AppState: ObservableObject {
     private var rawReviewRequested: [PullRequest] = []
     private var rawMine: [PullRequest] = []
 
+    /// Session-scoped cache of each repo's available labels, keyed by "owner/name".
+    private var labelCache: [String: [PRLabel]] = [:]
+
     // GraphQL budget tracking (5,000 points/hour). We stop polling when the
     // remaining budget dips below this floor and resume after the window resets.
     private static let rateFloor = 150
@@ -121,6 +124,48 @@ final class AppState: ObservableObject {
     func snooze(_ pr: PullRequest) {
         snoozes.snooze(pr.id, for: settings.snoozeDuration)
         reclassify()
+    }
+
+    /// The labels defined on a repo, cached for the session.
+    func repoLabels(for repo: String) async throws -> [PRLabel] {
+        if let cached = labelCache[repo] { return cached }
+        let token = try await GitHubClient.token()
+        let labels = try await GitHubClient.repoLabels(token: token, repo: repo)
+        labelCache[repo] = labels
+        return labels
+    }
+
+    /// Add labels to a PR via the API, then optimistically show them on the row.
+    func addLabels(_ names: [String], to pr: PullRequest) async {
+        do {
+            let token = try await GitHubClient.token()
+            try await GitHubClient.addLabels(token: token, repo: pr.repo, number: pr.number, labels: names)
+            let available = labelCache[pr.repo] ?? []
+            let added = names.map { name in
+                available.first { $0.name == name } ?? PRLabel(name: name, color: "")
+            }
+            applyLabels(added, toPRWithID: pr.id)
+            reclassify()
+        } catch {
+            lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            NSLog("[gitnotch] add labels failed: %@", lastError ?? "unknown")
+        }
+    }
+
+    /// Append labels to the matching raw PR, skipping ones already present.
+    private func applyLabels(_ labels: [PRLabel], toPRWithID id: String) {
+        func merge(_ pr: PullRequest) -> PullRequest {
+            var updated = pr
+            let existing = Set(pr.labels.map(\.name))
+            updated.labels += labels.filter { !existing.contains($0.name) }
+            return updated
+        }
+        if let i = rawReviewRequested.firstIndex(where: { $0.id == id }) {
+            rawReviewRequested[i] = merge(rawReviewRequested[i])
+        }
+        if let i = rawMine.firstIndex(where: { $0.id == id }) {
+            rawMine[i] = merge(rawMine[i])
+        }
     }
 
     func clearSnoozes() {

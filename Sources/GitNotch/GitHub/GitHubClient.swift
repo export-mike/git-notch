@@ -155,6 +155,43 @@ enum GitHubClient {
         )
     }
 
+    // MARK: - Labels (REST)
+
+    // Labels use the REST API (separate 5k req/hr limit) so they don't spend the
+    // GraphQL point budget the polling loop depends on.
+
+    static func repoLabels(token: String, repo: String) async throws -> [PRLabel] {
+        let url = URL(string: "https://api.github.com/repos/\(repo)/labels?per_page=100")!
+        let (data, response) = try await URLSession.shared.data(for: restRequest(url: url, token: token))
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw GitHubError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        }
+        return try JSONDecoder().decode([RESTLabel].self, from: data)
+            .map { PRLabel(name: $0.name, color: $0.color) }
+    }
+
+    static func addLabels(token: String, repo: String, number: Int, labels: [String]) async throws {
+        let url = URL(string: "https://api.github.com/repos/\(repo)/issues/\(number)/labels")!
+        var req = restRequest(url: url, token: token)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["labels": labels])
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw GitHubError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    private static func restRequest(url: URL, token: String) -> URLRequest {
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        req.setValue("git-notch", forHTTPHeaderField: "User-Agent")
+        return req
+    }
+
+    private struct RESTLabel: Decodable { let name: String; let color: String }
+
     // RATE-LIMIT RULE: GitHub GraphQL allows 5,000 points/hour. Query cost ≈ the
     // total nodes that *could* be returned (roughly sum of nested first:/last:
     // products ÷ 100). Keep every `first:` as small as realistically needed and
@@ -182,7 +219,7 @@ enum GitHubClient {
       updatedAt
       repository { nameWithOwner }
       author { login }
-      labels(first: 10) { nodes { name } }
+      labels(first: 10) { nodes { name color } }
       latestReviews(first: 10) { nodes { state } }
     }
     fragment mineFields on PullRequest {
@@ -195,6 +232,7 @@ enum GitHubClient {
       mergeable
       repository { nameWithOwner }
       author { login }
+      labels(first: 10) { nodes { name color } }
       reviews { totalCount }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       reviewThreads(first: 20) { nodes { isResolved isOutdated } }
@@ -240,7 +278,7 @@ private struct PRNode: Decodable {
 
     struct Labels: Decodable {
         let nodes: [Label]
-        struct Label: Decodable { let name: String }
+        struct Label: Decodable { let name: String; let color: String? }
     }
     let latestReviews: Reviews?
     let commits: Commits?
@@ -282,7 +320,7 @@ private struct PRNode: Decodable {
             author: author?.login ?? "",
             updatedAt: iso,
             isDraft: isDraft ?? false,
-            labels: labels?.nodes.map(\.name) ?? [],
+            labels: labels?.nodes.map { PRLabel(name: $0.name, color: $0.color ?? "") } ?? [],
             reviewDecision: reviewDecision,
             reviewCount: reviews?.totalCount ?? 0,
             checkState: checkState,
