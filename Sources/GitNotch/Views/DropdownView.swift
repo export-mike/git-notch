@@ -320,7 +320,9 @@ private struct LabelPickerView: View {
                         }
                     }
                 }
-                .frame(maxHeight: 240)
+                // Popovers size to the content's ideal height, and a ScrollView's
+                // ideal height is ~zero — pin it to the row count (capped) instead.
+                .frame(height: min(CGFloat(labels.count) * 26, 240))
 
                 Divider().overlay(Color.white.opacity(0.08))
                 Button {
