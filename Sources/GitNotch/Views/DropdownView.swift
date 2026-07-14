@@ -210,6 +210,16 @@ private struct PRRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
+            Image(systemName: "arrow.up.right")
+                .font(.system(size: 10))
+                .foregroundStyle(.white.opacity(hovering ? 0.7 : 0.25))
+        }
+        .padding(.horizontal, 14).padding(.vertical, 9)
+        .background(hovering ? Color.white.opacity(0.06) : .clear)
+        // Snooze sits in the bottom-right corner as an overlay so it never
+        // participates in the row's layout — showing it on hover can't reflow
+        // the title/subtitle text.
+        .overlay(alignment: .bottomTrailing) {
             if hovering {
                 Button(action: onSnooze) {
                     Image(systemName: "moon.zzz.fill").font(.system(size: 11))
@@ -217,13 +227,9 @@ private struct PRRow: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.white.opacity(0.55))
                 .help(snoozeHelp)
+                .padding(.horizontal, 14).padding(.vertical, 9)
             }
-            Image(systemName: "arrow.up.right")
-                .font(.system(size: 10))
-                .foregroundStyle(.white.opacity(hovering ? 0.7 : 0.25))
         }
-        .padding(.horizontal, 14).padding(.vertical, 9)
-        .background(hovering ? Color.white.opacity(0.06) : .clear)
         .contentShape(Rectangle())
         .onTapGesture { onOpen() }
         .onHover { hovering = $0 }
