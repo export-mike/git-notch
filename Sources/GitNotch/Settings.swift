@@ -34,6 +34,12 @@ final class Settings: ObservableObject {
     @Published var commenter: String {
         didSet { defaults.set(commenter, forKey: "commenter"); onChange?() }
     }
+    /// When true, the left "awaiting review" list only shows PRs where *you*
+    /// were individually requested — excluding requests that reached you via a
+    /// GitHub team. Applied server-side by swapping the search qualifier.
+    @Published var directReviewRequestsOnly: Bool {
+        didSet { defaults.set(directReviewRequestsOnly, forKey: "directReviewRequestsOnly"); onChange?() }
+    }
     @Published var refreshInterval: TimeInterval {
         didSet { defaults.set(refreshInterval, forKey: "refreshInterval"); onChange?() }
     }
@@ -55,6 +61,8 @@ final class Settings: ObservableObject {
         }
         org = defaults.object(forKey: "org") as? String ?? ""
         commenter = defaults.string(forKey: "commenter") ?? ""
+        // Default ON: show only individually-requested PRs unless the user opts out.
+        directReviewRequestsOnly = defaults.object(forKey: "directReviewRequestsOnly") as? Bool ?? true
         // Existing installs that already have an org configured skip the prompt.
         hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
             || defaults.object(forKey: "org") != nil

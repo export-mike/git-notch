@@ -107,14 +107,18 @@ enum GitHubClient {
 
     // MARK: - Fetch
 
-    static func fetch(token: String, org: String, commenter: String) async throws -> FetchResult {
+    static func fetch(token: String, org: String, commenter: String,
+                      directReviewRequestsOnly: Bool) async throws -> FetchResult {
         let orgQ = org.trimmingCharacters(in: .whitespaces)
         let scope = orgQ.isEmpty ? "" : " org:\(orgQ)"
         let commenterQ = commenter.trimmingCharacters(in: .whitespaces)
         let commenterClause = commenterQ.isEmpty ? "" : " commenter:\(commenterQ)"
 
+        // `user-review-requested` matches only PRs you were requested on directly;
+        // `review-requested` also matches requests that reached you via a team.
+        let reviewQualifier = directReviewRequestsOnly ? "user-review-requested:@me" : "review-requested:@me"
         // Ignore Dependabot's PRs — they don't need a human "review" nudge.
-        let rrQuery = "is:open is:pr review-requested:@me\(scope) archived:false draft:false -author:app/dependabot"
+        let rrQuery = "is:open is:pr \(reviewQualifier)\(scope) archived:false draft:false -author:app/dependabot"
         // Note: no draft filter here — drafts are fetched too so the UI can
         // offer an Open/Draft toggle. isDraft is used to split them client-side.
         let mineQuery = "is:open is:pr author:@me\(scope)\(commenterClause) archived:false"

@@ -5,7 +5,10 @@ GitHub pull requests that actually need you — nothing else. No dock icon, no
 menu-bar clutter.
 
 - **Left of the notch** — a GitHub mark with a red ring + count for PRs
-  **awaiting your review** (`is:open is:pr review-requested:@me archived:false draft:false`).
+  **awaiting your review** (`is:open is:pr user-review-requested:@me archived:false draft:false`).
+  By default only PRs where you were requested *individually* count; the
+  "Only direct review requests" setting can be turned off to also include PRs
+  requested via a GitHub team you belong to (`review-requested:@me`).
 - **Right of the notch** — PRs **you authored that need attention**: reviewers
   requested changes, any formal review landed, required CI is failing, or there
   are unresolved review comments.
@@ -39,8 +42,8 @@ authenticated.
 
 Open via the gear in any dropdown. Tune which signals light the right badge
 (changes-requested / any review feedback / failing CI / unresolved comments),
-set an optional `commenter` filter, choose the refresh interval, and toggle
-launch-at-login.
+limit the left list to direct (non-team) review requests, set an optional
+`commenter` filter, choose the refresh interval, and toggle launch-at-login.
 
 ## Layout
 
