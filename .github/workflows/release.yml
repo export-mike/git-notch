@@ -1,0 +1,90 @@
+name: Release
+
+# Manual tagging drives releases:
+#   git tag -a vX.Y.Z -m "Git Notch X.Y.Z" && git push origin vX.Y.Z
+# This workflow picks up the tag, verifies it matches Info.plist, builds the
+# DMG, and publishes a GitHub release with it attached.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # create the release + upload the DMG
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version and guard against Info.plist
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PLIST_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Info.plist)"
+          echo "tag=${GITHUB_REF_NAME}  plist=${PLIST_VERSION}"
+          if [[ "${VERSION}" != "${PLIST_VERSION}" ]]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} (version ${VERSION}) does not match Info.plist CFBundleShortVersionString ${PLIST_VERSION}"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build release app
+        run: ./build.sh release
+
+      - name: Package DMG
+        id: package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          APP="GitNotch.app"
+          VOL="Git Notch"
+          DMG="GitNotch-${VERSION}.dmg"
+
+          STAGE="$(mktemp -d)"
+          cp -R "${APP}" "${STAGE}/"
+          ln -s /Applications "${STAGE}/Applications"   # drag-to-install target
+
+          rm -f "${DMG}"
+          hdiutil create \
+            -volname "${VOL}" \
+            -srcfolder "${STAGE}" \
+            -fs HFS+ \
+            -format UDZO \
+            -ov \
+            "${DMG}" >/dev/null
+
+          SHA="$(shasum -a 256 "${DMG}" | awk '{print $1}')"
+          echo "dmg=${DMG}" >> "${GITHUB_OUTPUT}"
+          echo "sha=${SHA}" >> "${GITHUB_OUTPUT}"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          DMG: ${{ steps.package.outputs.dmg }}
+          SHA: ${{ steps.package.outputs.sha }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          NOTES="$(cat <<EOF
+          Git Notch ${VERSION}
+
+          **Install:** open the DMG and drag **Git Notch** onto the **Applications** folder.
+
+          On first launch, macOS may warn the app is from an unidentified developer
+          (it is ad-hoc signed). Right-click the app → **Open**, then confirm.
+
+          \`\`\`
+          sha256  ${SHA}
+          \`\`\`
+          EOF
+          )"
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo ">> Release ${TAG} exists — updating asset"
+            gh release upload "${TAG}" "${DMG}" --clobber
+          else
+            gh release create "${TAG}" "${DMG}" \
+              --title "Git Notch ${VERSION}" \
+              --notes "${NOTES}"
+          fi

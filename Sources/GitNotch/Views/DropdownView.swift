@@ -191,7 +191,9 @@ private struct PRRow: View {
     let snoozeHelp: String
     let onOpen: () -> Void
     let onSnooze: () -> Void
+    @EnvironmentObject var state: AppState
     @State private var hovering = false
+    @State private var showLabelPicker = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -208,6 +210,7 @@ private struct PRRow: View {
                     .font(.system(size: 10.5))
                     .foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)
+                if !pr.labels.isEmpty { labelChips }
             }
             Spacer(minLength: 0)
             Image(systemName: "arrow.up.right")
@@ -216,23 +219,55 @@ private struct PRRow: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 9)
         .background(hovering ? Color.white.opacity(0.06) : .clear)
-        // Snooze sits in the bottom-right corner as an overlay so it never
-        // participates in the row's layout — showing it on hover can't reflow
-        // the title/subtitle text.
+        // The hover toolbar sits in the bottom-right corner as an overlay so it
+        // never participates in the row's layout — showing it on hover can't
+        // reflow the title/subtitle text. Kept visible while the label picker is
+        // open so the popover's anchor doesn't vanish on hover-out.
         .overlay(alignment: .bottomTrailing) {
-            if hovering {
-                Button(action: onSnooze) {
-                    Image(systemName: "moon.zzz.fill").font(.system(size: 11))
+            if hovering || showLabelPicker {
+                HStack(spacing: 12) {
+                    Button { showLabelPicker = true } label: {
+                        Image(systemName: "tag").font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .help("Add label")
+                    .popover(isPresented: $showLabelPicker, arrowEdge: .bottom) {
+                        LabelPickerView(pr: pr) { add, remove in
+                            await state.updateLabels(add: add, remove: remove, on: pr)
+                        }
+                        .environmentObject(state)
+                        .environment(\.colorScheme, .dark)
+                    }
+                    Button(action: onSnooze) {
+                        Image(systemName: "moon.zzz.fill").font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .help(snoozeHelp)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white.opacity(0.55))
-                .help(snoozeHelp)
                 .padding(.horizontal, 14).padding(.vertical, 9)
             }
         }
         .contentShape(Rectangle())
         .onTapGesture { onOpen() }
         .onHover { hovering = $0 }
+    }
+
+    private var labelChips: some View {
+        HStack(spacing: 4) {
+            ForEach(pr.labels, id: \.self) { label in
+                let color = Color(hex: label.color)
+                Text(label.name)
+                    .font(.system(size: 9))
+                    .lineLimit(1)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Capsule().fill(color.opacity(0.22)))
+                    .foregroundStyle(color)
+            }
+        }
+        .lineLimit(1)
+        .padding(.top, 1)
     }
 
     private var dotColor: Color {
@@ -242,6 +277,101 @@ private struct PRRow: View {
         case .yellow: return .yellow
         case .green: return .notchGreen
         case .neutral: return .blue
+        }
+    }
+}
+
+/// Popover listing a repo's labels, multi-selectable. Labels already on the PR
+/// start checked; unchecking one removes it on Apply.
+private struct LabelPickerView: View {
+    let pr: PullRequest
+    let onApply: (_ add: [String], _ remove: [String]) async -> Void
+    @EnvironmentObject var state: AppState
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var labels: [PRLabel] = []
+    @State private var loading = true
+    @State private var error: String?
+    @State private var selected: Set<String> = []
+    @State private var applying = false
+
+    private var applied: Set<String> { Set(pr.labels.map(\.name)) }
+    private var additions: [String] { selected.subtracting(applied).sorted() }
+    private var removals: [String] { applied.subtracting(selected).sorted() }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Labels")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 6)
+
+            if loading {
+                ProgressView().controlSize(.small).tint(.white)
+                    .frame(maxWidth: .infinity).padding(.vertical, 24)
+            } else if let error {
+                Text(error)
+                    .font(.system(size: 11)).foregroundStyle(.orange)
+                    .padding(.horizontal, 12).padding(.vertical, 16)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(labels, id: \.self) { label in
+                            row(for: label)
+                        }
+                    }
+                }
+                // Popovers size to the content's ideal height, and a ScrollView's
+                // ideal height is ~zero — pin it to the row count (capped) instead.
+                .frame(height: min(CGFloat(labels.count) * 26, 240))
+
+                Divider().overlay(Color.white.opacity(0.08))
+                Button {
+                    let (add, remove) = (additions, removals)
+                    applying = true
+                    Task { await onApply(add, remove); dismiss() }
+                } label: {
+                    Text(applying ? "Applying…" : "Apply")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled((additions.isEmpty && removals.isEmpty) || applying)
+                .padding(12)
+            }
+        }
+        .frame(width: 240)
+        .background(.black.opacity(0.92))
+        .task {
+            do {
+                labels = try await state.repoLabels(for: pr.repo)
+                selected = applied
+            } catch {
+                self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+            loading = false
+        }
+    }
+
+    @ViewBuilder private func row(for label: PRLabel) -> some View {
+        let isSelected = selected.contains(label.name)
+        HStack(spacing: 8) {
+            Circle().fill(Color(hex: label.color)).frame(width: 9, height: 9)
+            Text(label.name)
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.9))
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isSelected { selected.remove(label.name) } else { selected.insert(label.name) }
         }
     }
 }
