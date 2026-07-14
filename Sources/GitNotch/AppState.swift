@@ -15,6 +15,9 @@ final class AppState: ObservableObject {
     var hasUrgentReview: Bool { reviewRequested.contains(where: \.isUrgent) }
     /// Urgent PR ids we've already sounded the alarm for, to avoid replaying.
     private var alertedUrgentIDs: Set<String> = []
+    /// True while the urgent-alert sound is actively playing, so the UI can
+    /// surface a one-tap silence control.
+    @Published private(set) var isUrgentSoundPlaying = false
 
     /// PRs awaiting my review with fewer than `approvalThreshold` approvals (left badge).
     @Published private(set) var reviewRequested: [PullRequest] = []
@@ -42,6 +45,9 @@ final class AppState: ObservableObject {
     private var rawReviewRequested: [PullRequest] = []
     private var rawMine: [PullRequest] = []
 
+    /// Session-scoped cache of each repo's available labels, keyed by "owner/name".
+    private var labelCache: [String: [PRLabel]] = [:]
+
     // GraphQL budget tracking (5,000 points/hour). We stop polling when the
     // remaining budget dips below this floor and resume after the window resets.
     private static let rateFloor = 150
@@ -50,6 +56,7 @@ final class AppState: ObservableObject {
 
     init() {
         settings.onChange = { [weak self] in self?.reclassify() }
+        sound.onPlayingChange = { [weak self] playing in self?.isUrgentSoundPlaying = playing }
     }
 
     func refresh() async {
@@ -118,10 +125,62 @@ final class AppState: ObservableObject {
         alertedUrgentIDs = current   // forget ones no longer urgent so they can re-alert later
     }
 
+    /// Silence the urgent alert immediately. It's loud, so opening the dropdown
+    /// and hitting this means the user is already acting on the PR.
+    func silenceUrgentAlarm() { sound.stop() }
+
     /// Snooze a PR for the configured duration, then refresh the visible lists.
     func snooze(_ pr: PullRequest) {
         snoozes.snooze(pr.id, for: settings.snoozeDuration)
         reclassify()
+    }
+
+    /// The labels defined on a repo, cached for the session.
+    func repoLabels(for repo: String) async throws -> [PRLabel] {
+        if let cached = labelCache[repo] { return cached }
+        let token = try await GitHubClient.token()
+        let labels = try await GitHubClient.repoLabels(token: token, repo: repo)
+        labelCache[repo] = labels
+        return labels
+    }
+
+    /// Add/remove labels on a PR via the API, then optimistically update the row.
+    func updateLabels(add: [String], remove: [String], on pr: PullRequest) async {
+        do {
+            let token = try await GitHubClient.token()
+            if !add.isEmpty {
+                try await GitHubClient.addLabels(token: token, repo: pr.repo, number: pr.number, labels: add)
+            }
+            for name in remove {
+                try await GitHubClient.removeLabel(token: token, repo: pr.repo, number: pr.number, label: name)
+            }
+            let available = labelCache[pr.repo] ?? []
+            let added = add.map { name in
+                available.first { $0.name == name } ?? PRLabel(name: name, color: "")
+            }
+            applyLabels(added, removing: Set(remove), toPRWithID: pr.id)
+            reclassify()
+        } catch {
+            lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            NSLog("[gitnotch] update labels failed: %@", lastError ?? "unknown")
+        }
+    }
+
+    /// Merge added labels into the matching raw PR (skipping duplicates) and drop removed ones.
+    private func applyLabels(_ labels: [PRLabel], removing removed: Set<String>, toPRWithID id: String) {
+        func merge(_ pr: PullRequest) -> PullRequest {
+            var updated = pr
+            let existing = Set(pr.labels.map(\.name))
+            updated.labels += labels.filter { !existing.contains($0.name) }
+            updated.labels.removeAll { removed.contains($0.name) }
+            return updated
+        }
+        if let i = rawReviewRequested.firstIndex(where: { $0.id == id }) {
+            rawReviewRequested[i] = merge(rawReviewRequested[i])
+        }
+        if let i = rawMine.firstIndex(where: { $0.id == id }) {
+            rawMine[i] = merge(rawMine[i])
+        }
     }
 
     func clearSnoozes() {

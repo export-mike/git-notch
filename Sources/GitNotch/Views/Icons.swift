@@ -25,6 +25,20 @@ extension Color {
     static let notchRed = Color(red: 1.0, green: 0.271, blue: 0.227)    // #FF453A
     static let notchGreen = Color(red: 0.188, green: 0.820, blue: 0.345) // #30D158
     static let notchBlue = Color(red: 0.039, green: 0.518, blue: 1.0)   // #0A84FF
+
+    /// A 6-char hex string as GitHub returns it (no '#'); falls back to grey.
+    init(hex: String) {
+        let s = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard s.count == 6, let v = UInt32(s, radix: 16) else {
+            self = .gray
+            return
+        }
+        self = Color(
+            red: Double((v >> 16) & 0xFF) / 255,
+            green: Double((v >> 8) & 0xFF) / 255,
+            blue: Double(v & 0xFF) / 255
+        )
+    }
 }
 
 /// SwiftUI wrapper that renders the mark tinted to `color`.
