@@ -233,8 +233,8 @@ private struct PRRow: View {
                     .foregroundStyle(.white.opacity(0.55))
                     .help("Add label")
                     .popover(isPresented: $showLabelPicker, arrowEdge: .bottom) {
-                        LabelPickerView(pr: pr) { names in
-                            await state.addLabels(names, to: pr)
+                        LabelPickerView(pr: pr) { add, remove in
+                            await state.updateLabels(add: add, remove: remove, on: pr)
                         }
                         .environmentObject(state)
                         .environment(\.colorScheme, .dark)
@@ -282,10 +282,10 @@ private struct PRRow: View {
 }
 
 /// Popover listing a repo's labels, multi-selectable. Labels already on the PR
-/// are pre-checked and locked.
+/// start checked; unchecking one removes it on Apply.
 private struct LabelPickerView: View {
     let pr: PullRequest
-    let onAdd: ([String]) async -> Void
+    let onApply: (_ add: [String], _ remove: [String]) async -> Void
     @EnvironmentObject var state: AppState
     @Environment(\.dismiss) private var dismiss
 
@@ -296,11 +296,12 @@ private struct LabelPickerView: View {
     @State private var applying = false
 
     private var applied: Set<String> { Set(pr.labels.map(\.name)) }
-    private var newSelections: [String] { selected.subtracting(applied).sorted() }
+    private var additions: [String] { selected.subtracting(applied).sorted() }
+    private var removals: [String] { applied.subtracting(selected).sorted() }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Add label")
+            Text("Labels")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 6)
@@ -326,16 +327,16 @@ private struct LabelPickerView: View {
 
                 Divider().overlay(Color.white.opacity(0.08))
                 Button {
-                    let names = newSelections
+                    let (add, remove) = (additions, removals)
                     applying = true
-                    Task { await onAdd(names); dismiss() }
+                    Task { await onApply(add, remove); dismiss() }
                 } label: {
-                    Text(applying ? "Adding…" : "Add")
+                    Text(applying ? "Applying…" : "Apply")
                         .font(.system(size: 12, weight: .semibold))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(newSelections.isEmpty || applying)
+                .disabled((additions.isEmpty && removals.isEmpty) || applying)
                 .padding(12)
             }
         }
@@ -353,25 +354,23 @@ private struct LabelPickerView: View {
     }
 
     @ViewBuilder private func row(for label: PRLabel) -> some View {
-        let isApplied = applied.contains(label.name)
         let isSelected = selected.contains(label.name)
         HStack(spacing: 8) {
             Circle().fill(Color(hex: label.color)).frame(width: 9, height: 9)
             Text(label.name)
                 .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(isApplied ? 0.4 : 0.9))
+                .foregroundStyle(.white.opacity(0.9))
                 .lineLimit(1)
             Spacer(minLength: 4)
             if isSelected {
                 Image(systemName: "checkmark")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white.opacity(isApplied ? 0.4 : 0.9))
+                    .foregroundStyle(.white.opacity(0.9))
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
         .contentShape(Rectangle())
         .onTapGesture {
-            guard !isApplied else { return }
             if isSelected { selected.remove(label.name) } else { selected.insert(label.name) }
         }
     }

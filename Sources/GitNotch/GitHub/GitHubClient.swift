@@ -182,6 +182,18 @@ enum GitHubClient {
         }
     }
 
+    static func removeLabel(token: String, repo: String, number: Int, label: String) async throws {
+        let encoded = label.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? label
+        let url = URL(string: "https://api.github.com/repos/\(repo)/issues/\(number)/labels/\(encoded)")!
+        var req = restRequest(url: url, token: token)
+        req.httpMethod = "DELETE"
+        let (data, response) = try await URLSession.shared.data(for: req)
+        // 404 = label already gone; that's the state we wanted.
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode), http.statusCode != 404 {
+            throw GitHubError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
     private static func restRequest(url: URL, token: String) -> URLRequest {
         var req = URLRequest(url: url)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

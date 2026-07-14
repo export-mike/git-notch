@@ -135,29 +135,35 @@ final class AppState: ObservableObject {
         return labels
     }
 
-    /// Add labels to a PR via the API, then optimistically show them on the row.
-    func addLabels(_ names: [String], to pr: PullRequest) async {
+    /// Add/remove labels on a PR via the API, then optimistically update the row.
+    func updateLabels(add: [String], remove: [String], on pr: PullRequest) async {
         do {
             let token = try await GitHubClient.token()
-            try await GitHubClient.addLabels(token: token, repo: pr.repo, number: pr.number, labels: names)
+            if !add.isEmpty {
+                try await GitHubClient.addLabels(token: token, repo: pr.repo, number: pr.number, labels: add)
+            }
+            for name in remove {
+                try await GitHubClient.removeLabel(token: token, repo: pr.repo, number: pr.number, label: name)
+            }
             let available = labelCache[pr.repo] ?? []
-            let added = names.map { name in
+            let added = add.map { name in
                 available.first { $0.name == name } ?? PRLabel(name: name, color: "")
             }
-            applyLabels(added, toPRWithID: pr.id)
+            applyLabels(added, removing: Set(remove), toPRWithID: pr.id)
             reclassify()
         } catch {
             lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            NSLog("[gitnotch] add labels failed: %@", lastError ?? "unknown")
+            NSLog("[gitnotch] update labels failed: %@", lastError ?? "unknown")
         }
     }
 
-    /// Append labels to the matching raw PR, skipping ones already present.
-    private func applyLabels(_ labels: [PRLabel], toPRWithID id: String) {
+    /// Merge added labels into the matching raw PR (skipping duplicates) and drop removed ones.
+    private func applyLabels(_ labels: [PRLabel], removing removed: Set<String>, toPRWithID id: String) {
         func merge(_ pr: PullRequest) -> PullRequest {
             var updated = pr
             let existing = Set(pr.labels.map(\.name))
             updated.labels += labels.filter { !existing.contains($0.name) }
+            updated.labels.removeAll { removed.contains($0.name) }
             return updated
         }
         if let i = rawReviewRequested.firstIndex(where: { $0.id == id }) {
